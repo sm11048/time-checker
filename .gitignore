@@ -28,8 +28,9 @@ Cargo.lock
 # Data files (user's time tracking data)
 .time-checker/
 
-# Claude Code settings
-.claude/
+# Claude Code settings (except CLAUDE.md which is tracked)
+.claude/*
+!.claude/CLAUDE.md
 
 # Benchmark tests
 benchmark/
