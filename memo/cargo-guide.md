@@ -452,6 +452,250 @@ cargo update
 
 ---
 
+## クロスコンパイルと配布
+
+### 結論から言うと
+
+**MacでビルドしたバイナリはWindowsでは動きません。**
+
+Rustはネイティブコードにコンパイルされるため、ビルドしたバイナリは**特定のOS + CPUアーキテクチャ**でのみ動作します。
+
+### ビルドターゲットとは？
+
+ビルド時に「どの環境向けか」を指定するのが**ターゲット**です。
+
+```
+ターゲット名の構造:
+<arch>-<vendor>-<os>-<env>
+
+例:
+x86_64-apple-darwin        # macOS (Intel)
+aarch64-apple-darwin       # macOS (Apple Silicon / M1, M2, M3)
+x86_64-unknown-linux-gnu   # Linux (Intel/AMD)
+x86_64-pc-windows-msvc     # Windows (Intel/AMD)
+```
+
+### 現在の環境を確認
+
+```bash
+# 自分の環境のターゲットを確認
+rustc --print host
+
+# time-checkerの例（Apple Silicon Mac）
+# 出力: aarch64-apple-darwin
+```
+
+### クロスコンパイル（別OS向けにビルド）
+
+#### 方法1: ターゲットを追加してビルド
+
+```bash
+# Windows向けターゲットを追加
+rustup target add x86_64-pc-windows-gnu
+
+# Windows向けにビルド
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+**注意**: クロスコンパイルは設定が複雑で、リンカーの設定等が必要な場合があります。
+
+#### 方法2: GitHub Actionsで各OS向けにビルド（推奨）
+
+各OSのGitHub Runner上でビルドする方法が最も確実です。
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: time-checker-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: time-checker-macos-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: time-checker-macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: time-checker-windows-x86_64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/time-checker*
+```
+
+---
+
+### 配布方法
+
+#### 1. GitHub Releases（最も一般的）
+
+**メリット:**
+- 無料
+- バージョン管理と連動
+- ダウンロード数の確認可能
+
+**手順:**
+1. バージョンタグを作成: `git tag v0.1.0`
+2. プッシュ: `git push origin v0.1.0`
+3. GitHub上でReleaseを作成
+4. 各OS向けのバイナリをアップロード
+
+**ダウンロードURL例:**
+```
+https://github.com/sm11048/time-checker/releases/download/v0.1.0/time-checker-macos-arm64
+https://github.com/sm11048/time-checker/releases/download/v0.1.0/time-checker-linux-x86_64
+https://github.com/sm11048/time-checker/releases/download/v0.1.0/time-checker-windows-x86_64.exe
+```
+
+#### 2. crates.io（Rustコミュニティ向け）
+
+```bash
+# crates.ioにログイン
+cargo login
+
+# パッケージを公開
+cargo publish
+```
+
+**メリット:**
+- `cargo install time-checker`で誰でもインストール可能
+- Rustユーザーには最も馴染みのある方法
+
+**注意:**
+- 一度公開すると削除できない
+- パッケージ名は早い者勝ち
+
+#### 3. Homebrew（macOS向け）
+
+Formula（レシピ）を作成してHomebrewで配布：
+
+```bash
+# ユーザーがインストールする時
+brew install sm11048/tap/time-checker
+```
+
+---
+
+### 配布時のチェックリスト
+
+#### バイナリ配布の場合
+
+- [ ] 各OS向けにビルド（macOS, Linux, Windows）
+- [ ] 各アーキテクチャ向けにビルド（x86_64, arm64）
+- [ ] READMEにインストール方法を記載
+- [ ] ライセンスファイルを含める
+- [ ] バージョン番号を更新（Cargo.toml）
+- [ ] CHANGELOGを更新
+
+#### 配布ファイル名の推奨形式
+
+```
+<name>-<version>-<os>-<arch>.<ext>
+
+例:
+time-checker-0.1.0-macos-arm64.tar.gz
+time-checker-0.1.0-linux-x86_64.tar.gz
+time-checker-0.1.0-windows-x86_64.zip
+```
+
+---
+
+### 実践: time-checkerを配布する場合
+
+#### ステップ1: バージョンを確認
+
+```bash
+# Cargo.tomlのバージョンを確認・更新
+grep version Cargo.toml
+# version = "0.1.0"
+```
+
+#### ステップ2: タグを作成
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+#### ステップ3: GitHub Releasesで公開
+
+1. https://github.com/sm11048/time-checker/releases/new
+2. タグ `v0.1.0` を選択
+3. リリースノートを記載
+4. バイナリファイルをアップロード
+
+---
+
+### よくある質問
+
+#### Q: なぜMacのバイナリがWindowsで動かないの？
+
+**A:** OSごとに実行ファイルの形式が違うためです。
+
+| OS | 実行ファイル形式 | 拡張子 |
+|----|------------------|--------|
+| Windows | PE (Portable Executable) | `.exe` |
+| macOS | Mach-O | なし |
+| Linux | ELF | なし |
+
+また、OSの機能（システムコール）の呼び出し方も異なります。
+
+#### Q: ソースコードで配布すればいいのでは？
+
+**A:** それも選択肢です。ただし：
+
+- ユーザーがRustをインストールする必要がある
+- ビルドに時間がかかる（依存クレートのダウンロード＆コンパイル）
+- ビルドエラーが起きる可能性
+
+技術者向けならソースコード配布でOK、一般ユーザー向けならバイナリ配布が親切です。
+
+#### Q: Apple Silicon (M1/M2/M3) と Intel Mac は別？
+
+**A:** はい、別のターゲットです。
+
+```
+aarch64-apple-darwin  # Apple Silicon (M1, M2, M3)
+x86_64-apple-darwin   # Intel Mac
+```
+
+ただし、macOSにはRosetta 2があるため、Intel Mac向けバイナリはApple Siliconでも動作します（若干遅くなる）。
+
+#### Q: 静的リンクと動的リンクの違いは？
+
+**A:**
+- **静的リンク**: 依存ライブラリをバイナリに含める → 単体で動作、ファイルサイズ大
+- **動的リンク**: 実行時にライブラリを参照 → ファイルサイズ小、環境依存
+
+Rustはデフォルトで静的リンク（musl libc使用時）が可能で、配布しやすいバイナリを作れます。
+
+---
+
 ## まとめ
 
 ### Cargoでできること
