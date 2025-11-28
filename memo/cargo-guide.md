@@ -163,27 +163,118 @@ cargo run -- --help
 
 ---
 
-### 5. インストール
+### 5. インストール（cargo install 詳細解説）
+
+#### 基本コマンド
 
 ```bash
 cargo install --path .
 ```
 
-**何をする？**
-- リリースビルドを実行
-- 実行ファイルを`~/.cargo/bin/`にコピー
-- `~/.cargo/bin/`がPATHに含まれていれば、どこからでも実行可能に
+#### コマンドの分解
 
-**インストール後:**
-```bash
-# どこからでも実行可能！
-time-checker start "作業"
-time-checker status
+```
+cargo install --path .
+│     │       │      │
+│     │       │      └─ 「.」= 現在のディレクトリ
+│     │       └──────── どこからインストールするか
+│     └──────────────── 「インストール」サブコマンド
+└────────────────────── Cargoコマンド
 ```
 
-**アンインストール:**
+#### 内部で何が起きているか
+
+```
+1. cargo build --release を実行
+2. target/release/time-checker が生成される
+3. ~/.cargo/bin/time-checker にコピーされる
+4. PATHに ~/.cargo/bin が含まれていれば、どこからでも実行可能に
+```
+
+#### 図解
+
+```
+【ビルド前】
+time-checker/
+└── src/main.rs
+
+      ↓ cargo install --path .
+
+【ビルド後】
+time-checker/
+└── target/release/time-checker  ← ここにビルドされる
+                        │
+                        │ コピー
+                        ↓
+~/.cargo/bin/time-checker  ← ここに配置（PATHに含まれている）
+
+      ↓
+
+どこからでも実行可能！
+$ cd ~/Documents
+$ time-checker start "作業"  ← どこからでもOK！
+```
+
+#### インストール前 vs 後
+
+| 状態 | 実行方法 | 場所の制限 |
+|------|----------|-----------|
+| 未インストール | `./target/release/time-checker` | プロジェクトディレクトリ内のみ |
+| インストール後 | `time-checker` | どこからでもOK |
+
+#### インストール関連コマンド
+
 ```bash
+# ローカルプロジェクトからインストール
+cargo install --path .
+
+# 強制再インストール（更新時）
+cargo install --path . --force
+
+# インストール先を確認
+which time-checker
+# → /Users/s_mtsbr/.cargo/bin/time-checker
+
+# インストール済みパッケージ一覧
+cargo install --list
+
+# アンインストール
 cargo uninstall time-checker
+```
+
+#### 様々なインストール方法
+
+```bash
+# 1. ローカルプロジェクトから（今回のケース）
+cargo install --path .
+
+# 2. crates.io から（公開パッケージ）
+cargo install ripgrep          # 高速grep
+cargo install bat              # catの高機能版
+cargo install fd-find          # findの高速版
+cargo install tokei            # コード行数カウント
+
+# 3. GitHubから直接
+cargo install --git https://github.com/sharkdp/bat
+
+# 4. 特定のバージョンを指定
+cargo install ripgrep --version 13.0.0
+
+# 5. 特定のブランチから
+cargo install --git https://github.com/user/repo --branch develop
+```
+
+#### PATHの確認
+
+```bash
+# ~/.cargo/bin がPATHに含まれているか確認
+echo $PATH | tr ':' '\n' | grep cargo
+
+# 含まれていない場合、以下を ~/.zshrc に追加
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# 設定を反映
+source ~/.zshrc
 ```
 
 ---
@@ -693,6 +784,140 @@ x86_64-apple-darwin   # Intel Mac
 - **動的リンク**: 実行時にライブラリを参照 → ファイルサイズ小、環境依存
 
 Rustはデフォルトで静的リンク（musl libc使用時）が可能で、配布しやすいバイナリを作れます。
+
+---
+
+## 便利なCargoプラグインとツール
+
+### 開発効率を上げるプラグイン
+
+#### cargo-watch（ファイル変更を監視して自動実行）
+
+```bash
+# インストール
+cargo install cargo-watch
+
+# ファイル変更時に自動テスト
+cargo watch -x test
+
+# ファイル変更時に自動ビルド＆実行
+cargo watch -x run
+
+# 複数コマンドを連続実行
+cargo watch -x check -x test -x run
+```
+
+**使いどころ**: TDD開発時にファイルを保存するたびに自動でテストが走る
+
+#### cargo-edit（依存関係を簡単に追加・削除）
+
+```bash
+# インストール
+cargo install cargo-edit
+
+# 依存関係を追加（Cargo.tomlを自動編集）
+cargo add serde
+cargo add tokio --features full
+
+# 開発用依存関係を追加
+cargo add --dev tempfile
+
+# 依存関係を削除
+cargo rm serde
+
+# 依存関係をアップグレード
+cargo upgrade
+```
+
+**使いどころ**: Cargo.tomlを手動で編集する代わりにコマンドで管理
+
+#### cargo-outdated（古い依存関係をチェック）
+
+```bash
+# インストール
+cargo install cargo-outdated
+
+# 古い依存関係を表示
+cargo outdated
+```
+
+**出力例:**
+```
+Name             Project  Compat  Latest  Kind
+----             -------  ------  ------  ----
+chrono           0.4.31   0.4.38  0.4.38  Normal
+serde            1.0.193  1.0.210 1.0.210 Normal
+```
+
+#### cargo-expand（マクロ展開を確認）
+
+```bash
+# インストール
+cargo install cargo-expand
+
+# マクロ展開後のコードを表示
+cargo expand
+```
+
+**使いどころ**: `#[derive(Debug)]`などのマクロが何を生成しているか確認
+
+---
+
+### おすすめのRust製CLIツール
+
+`cargo install`でインストールできる便利ツール：
+
+| ツール | 説明 | インストール |
+|--------|------|-------------|
+| **ripgrep (rg)** | 超高速grep | `cargo install ripgrep` |
+| **fd** | 高速find | `cargo install fd-find` |
+| **bat** | catの高機能版（シンタックスハイライト） | `cargo install bat` |
+| **exa** | lsの高機能版 | `cargo install exa` |
+| **tokei** | コード行数カウント | `cargo install tokei` |
+| **hyperfine** | ベンチマークツール | `cargo install hyperfine` |
+| **just** | Makefileの代替 | `cargo install just` |
+| **starship** | カスタムプロンプト | `cargo install starship` |
+
+#### 使用例
+
+```bash
+# ripgrep: 高速に文字列検索
+rg "fn main" --type rust
+
+# fd: ファイル名で検索
+fd "\.rs$"
+
+# bat: シンタックスハイライト付きでファイル表示
+bat src/main.rs
+
+# tokei: プロジェクトのコード行数
+tokei .
+
+# hyperfine: コマンドのベンチマーク
+hyperfine './target/release/time-checker status'
+```
+
+---
+
+### 開発時のおすすめワークフロー
+
+```bash
+# ターミナル1: ファイル変更を監視して自動テスト
+cargo watch -x test
+
+# ターミナル2: コードを編集
+vim src/main.rs
+
+# 保存するたびにターミナル1でテストが自動実行される
+```
+
+#### VS Code + rust-analyzer
+
+VS Codeを使う場合は `rust-analyzer` 拡張機能が必須：
+- 自動補完
+- エラー表示
+- 型ヒント
+- 定義ジャンプ
 
 ---
 
